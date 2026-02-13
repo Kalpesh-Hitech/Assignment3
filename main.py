@@ -31,6 +31,23 @@ class TaskDB(Base):
     due_date = Column(Date, nullable=False)
     completed_at = Column(DateTime, nullable=True)
 
+    @property
+    def is_overdue(self):
+        return (
+            self.status != "completed"
+            and self.due_date is not None
+            and date.today() > self.due_date
+        )
+    
+    @property
+    def days_left(self):
+        if self.status=="completed":
+            return 0
+        if not self.due_date:
+            return None
+        return (
+            (self.due_date-date.today()).days
+        )
 
 
 Base.metadata.create_all(bind=engine)
@@ -51,8 +68,7 @@ class TaskCreate(BaseModel):
     due_date: date
     completed_at: Optional[datetime] = None
 
-    # @property
-    # def 
+    
 
     @field_validator("title")
     def validate_title(cls,title:str):
@@ -99,6 +115,8 @@ class TaskResponse(BaseModel):
     status: str
     due_date: date
     completed_at: Optional[datetime] = None
+    is_overdue:int
+    days_left:int
 
 @app.post("/tasks", response_model=TaskResponse)
 def create_task(task: TaskCreate, db: Session = Depends(get_db)):
