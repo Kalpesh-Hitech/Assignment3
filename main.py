@@ -10,6 +10,7 @@ from sqlalchemy.orm import (
     declarative_base,
     Session
 )
+# from helper import get_task_or_404,apply_filter
 import re
 import enum
 
@@ -132,6 +133,33 @@ class TaskResponse(BaseModel):
     is_overdue:bool
     days_left:int
 
+# from fastapi import Depends, FastAPI, HTTPException
+# from main import TaskDB
+def get_task_or_404(db, id):
+    db_task = db.query(TaskDB).filter(TaskDB.id == id).first()
+    if db_task is None:
+        raise HTTPException(status_code=422, detail="please enter valid id!!")
+    return db_task
+
+def apply_filter(db,queryparm,filters):
+    if(queryparm=="status"):
+        db_task=db.query(TaskDB).filter(TaskDB.status==filters)
+        if db_task is None:
+            raise HTTPException(status_code=422,detail="there is not values in status!!")
+        return db_task
+    if(queryparm=="priority"):
+        db_task=db.query(TaskDB).filter(TaskDB.priority==filters)
+        if db_task is None:
+            raise HTTPException(status_code=422,detail="there is not values in priority!!")
+        return db_task
+    return None
+def paginate(db, page, limit):
+    db_task=db.query(TaskDB).all()
+    start = (page - 1) * limit
+    end = start + limit
+    db_pages = db_task[start:end]  # ✅ simple slicing
+    return db_pages
+
 @app.post("/tasks", response_model=TaskResponse)
 def create_task(task: TaskCreate, db: Session = Depends(get_db)):
     if(task.priority=="high" and task.status=="pending"):   
@@ -157,3 +185,27 @@ def update_by_id(task_id: int, task: TaskCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_task)
     return db_task
+
+@app.get("/tasks", response_model=list[TaskResponse])
+def get_task(
+    page: int | None = None,
+    limit: int | None = None,
+    status: str | None = None,
+    priority: str | None = None,
+    db: Session = Depends(get_db),
+):
+    
+    if status:
+        db_task=apply_filter(db,"status",status)
+        return db_task
+    if priority:
+        db_task=apply_filter(db,"priority",priority)
+        return db_task
+    if page is not None and limit is not None:
+        return paginate(db,page,limit)
+    db_all=db.query(TaskDB).all()
+    return db_all
+
+@app.get("/tasks/{task_id}", response_model=TaskResponse)
+def get_task_id(task_id: int, db: Session = Depends(get_db)):
+    return get_task_or_404(db,task_id)
