@@ -48,6 +48,20 @@ class TaskDB(Base):
         return (
             (self.due_date-date.today()).days
         )
+    
+    @staticmethod
+    def validate_status_transition(old_status, new_status):
+        if (old_status=="pending" and new_status=="in_process") or (old_status=="in_process" and new_status=="completed") or (old_status==new_status):
+            return True
+        return False
+    
+    @staticmethod
+    def can_create_high_priority(db):
+        db_high=db.query(TaskDB).filter(TaskDB.priority=="high", TaskDB.status=="pending").count()
+        if(db_high>=5):
+            raise HTTPException(status_code=422,detail="high pending is more than 5")
+        return {"message":"created or updated"}
+
 
 
 Base.metadata.create_all(bind=engine)
@@ -115,14 +129,31 @@ class TaskResponse(BaseModel):
     status: str
     due_date: date
     completed_at: Optional[datetime] = None
-    is_overdue:int
+    is_overdue:bool
     days_left:int
 
 @app.post("/tasks", response_model=TaskResponse)
 def create_task(task: TaskCreate, db: Session = Depends(get_db)):
+    if(task.priority=="high" and task.status=="pending"):   
+        TaskDB.can_create_high_priority(db)
     db_task = TaskDB(**task.model_dump())
     db.add(db_task)
     db.commit()
     db.refresh(db_task)
     return db_task
 
+@app.put("/tasks/{task_id}", response_model=TaskResponse)
+def update_by_id(task_id: int, task: TaskCreate, db: Session = Depends(get_db)):
+    db_task=db.query(TaskDB).filter(TaskDB.id==task_id).first()
+    if not (TaskDB.validate_status_transition(db_task.status,task.status)):
+        raise HTTPException(status_code=422,detail="status is wrong!! transsion error!!")
+    if(task.priority=="high" and task.status=="pending"):   
+        TaskDB.can_create_high_priority(db)
+    db_task.title = task.title
+    db_task.description = task.description
+    db_task.priority = task.priority
+    db_task.status = task.status
+    db_task.due_date = task.due_date
+    db.commit()
+    db.refresh(db_task)
+    return db_task
